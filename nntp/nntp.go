@@ -9,13 +9,12 @@ package nntp
 import (
 	"bufio"
 	"bytes"
-	"container/vector"
+	"errors"
 	"fmt"
-	"http"
 	"io"
 	"io/ioutil"
-	"os"
 	"net"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -85,9 +84,9 @@ type bodyReader struct {
 var dotnl = []byte(".\n")
 var dotdot = []byte("..")
 
-func (r *bodyReader) Read(p []byte) (n int, err os.Error) {
+func (r *bodyReader) Read(p []byte) (n int, err error) {
 	if r.eof {
-		return 0, os.EOF
+		return 0, io.EOF
 	}
 	if r.buf == nil {
 		r.buf = &bytes.Buffer{}
@@ -105,7 +104,7 @@ func (r *bodyReader) Read(p []byte) (n int, err os.Error) {
 		// stop on .
 		if bytes.Equal(b, dotnl) {
 			r.eof = true
-			return 0, os.EOF
+			return 0, io.EOF
 		}
 		// unescape leading ..
 		if bytes.HasPrefix(b, dotdot) {
@@ -117,7 +116,7 @@ func (r *bodyReader) Read(p []byte) (n int, err os.Error) {
 	return
 }
 
-func (r *bodyReader) discard() os.Error {
+func (r *bodyReader) discard() error {
 	_, err := ioutil.ReadAll(r)
 	return err
 }
@@ -130,7 +129,7 @@ type articleReader struct {
 	headerbuf  *bytes.Buffer
 }
 
-func (r *articleReader) Read(p []byte) (n int, err os.Error) {
+func (r *articleReader) Read(p []byte) (n int, err error) {
 	if r.headerbuf == nil {
 		buf := new(bytes.Buffer)
 		for k, fv := range r.a.Header {
@@ -145,7 +144,7 @@ func (r *articleReader) Read(p []byte) (n int, err os.Error) {
 	}
 	if !r.headerdone {
 		n, err = r.headerbuf.Read(p)
-		if err == os.EOF {
+		if err == io.EOF {
 			err = nil
 			r.headerdone = true
 		}
@@ -155,12 +154,12 @@ func (r *articleReader) Read(p []byte) (n int, err os.Error) {
 	}
 	if r.a.Body != nil {
 		n, err = r.a.Body.Read(p)
-		if err == os.EOF {
+		if err == io.EOF {
 			r.a.Body = nil
 		}
 		return
 	}
-	return 0, os.EOF
+	return 0, io.EOF
 }
 
 func (a *Article) String() string {
@@ -171,11 +170,11 @@ func (a *Article) String() string {
 	return fmt.Sprintf("[NNTP article %s]", id[0])
 }
 
-func (a *Article) WriteTo(w io.Writer) (int64, os.Error) {
+func (a *Article) WriteTo(w io.Writer) (int64, error) {
 	return io.Copy(w, &articleReader{a: a})
 }
 
-func (p ProtocolError) String() string {
+func (p ProtocolError) Error() string {
 	return string(p)
 }
 
@@ -197,17 +196,15 @@ func maybeId(cmd, id string) string {
 // Example:
 //   conn, err := nntp.Dial("tcp", "my.news:nntp")
 //
-func Dial(network, addr string) (*Conn, os.Error) {
+func Dial(network, addr string) (*Conn, error) {
 	res := new(Conn)
-	c, err := net.Dial(network, "", addr)
+	c, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
 	}
 
 	res.conn = c
-	if res.r, err = bufio.NewReaderSize(c, 4096); err != nil {
-		return nil, err
-	}
+	res.r = bufio.NewReaderSize(c, 4096)
 
 	_, err = res.r.ReadString('\n')
 	if err != nil {
@@ -225,8 +222,8 @@ func (c *Conn) body() io.Reader {
 // readStrings reads a list of strings from the NNTP connection,
 // stopping at a line containing only a . (Convenience method for
 // LIST, etc.)
-func (c *Conn) readStrings() ([]string, os.Error) {
-	var sv vector.StringVector
+func (c *Conn) readStrings() ([]string, error) {
+	var sv []string
 	for {
 		line, err := c.r.ReadString('\n')
 		if err != nil {
@@ -240,14 +237,14 @@ func (c *Conn) readStrings() ([]string, os.Error) {
 		if line == "." {
 			break
 		}
-		sv.Push(line)
+		sv = append(sv, line)
 	}
 	return []string(sv), nil
 }
 
 // Authenticate logs in to the NNTP server.
 // It only sends the password if the server requires one.
-func (c *Conn) Authenticate(username, password string) os.Error {
+func (c *Conn) Authenticate(username, password string) error {
 	code, _, err := c.cmd(2, "AUTHINFO USER %s", username)
 	if code/100 == 3 {
 		_, _, err = c.cmd(2, "AUTHINFO PASS %s", password)
@@ -260,7 +257,7 @@ func (c *Conn) Authenticate(username, password string) os.Error {
 // reads the response line. If expectCode > 0, the status code on the
 // response line must match it. 1 digit expectCodes only check the first
 // digit of the status code, etc.
-func (c *Conn) cmd(expectCode uint, format string, args ...interface{}) (code uint, line string, err os.Error) {
+func (c *Conn) cmd(expectCode uint, format string, args ...interface{}) (code uint, line string, err error) {
 	if c.close {
 		return 0, "", ProtocolError("connection closed")
 	}
@@ -281,7 +278,8 @@ func (c *Conn) cmd(expectCode uint, format string, args ...interface{}) (code ui
 	if len(line) < 4 || line[3] != ' ' {
 		return 0, "", ProtocolError("short response: " + line)
 	}
-	code, err = strconv.Atoui(line[0:3])
+	codetmp, err := strconv.ParseUint(line[0:3], 10, 0)
+	code = uint(codetmp)
 	if err != nil {
 		return 0, "", ProtocolError("invalid response code: " + line)
 	}
@@ -289,27 +287,27 @@ func (c *Conn) cmd(expectCode uint, format string, args ...interface{}) (code ui
 	if 1 <= expectCode && expectCode < 10 && code/100 != expectCode ||
 		10 <= expectCode && expectCode < 100 && code/10 != expectCode ||
 		100 <= expectCode && expectCode < 1000 && code != expectCode {
-		err = Error{code, line}
+		err = errors.New(fmt.Sprintf("%d %s", code, line))
 	}
 	return
 }
 
 // ModeReader switches the NNTP server to "reader" mode, if it
 // is a mode-switching server.
-func (c *Conn) ModeReader() os.Error {
+func (c *Conn) ModeReader() error {
 	_, _, err := c.cmd(20, "MODE READER")
 	return err
 }
 
 // NewGroups returns a list of groups added since the given time.
-func (c *Conn) NewGroups(since *time.Time) ([]Group, os.Error) {
+func (c *Conn) NewGroups(since time.Time) ([]Group, error) {
 	if _, _, err := c.cmd(231, "NEWGROUPS %s GMT", since.Format(timeFormatNew)); err != nil {
 		return nil, err
 	}
 	return c.readGroups()
 }
 
-func (c *Conn) readGroups() ([]Group, os.Error) {
+func (c *Conn) readGroups() ([]Group, error) {
 	lines, err := c.readStrings()
 	if err != nil {
 		return nil, err
@@ -319,7 +317,7 @@ func (c *Conn) readGroups() ([]Group, os.Error) {
 
 // NewNews returns a list of the IDs of articles posted
 // to the given group since the given time.
-func (c *Conn) NewNews(group string, since *time.Time) ([]string, os.Error) {
+func (c *Conn) NewNews(group string, since time.Time) ([]string, error) {
 	if _, _, err := c.cmd(230, "NEWNEWS %s %s GMT", group, since.Format(timeFormatNew)); err != nil {
 		return nil, err
 	}
@@ -329,7 +327,7 @@ func (c *Conn) NewNews(group string, since *time.Time) ([]string, os.Error) {
 		return nil, err
 	}
 
-	sort.SortStrings(id)
+	sort.Strings(id)
 	w := 0
 	for r, s := range id {
 		if r == 0 || id[r-1] != s {
@@ -343,10 +341,10 @@ func (c *Conn) NewNews(group string, since *time.Time) ([]string, os.Error) {
 }
 
 // parseGroups is used to parse a list of group states.
-func parseGroups(lines []string) ([]Group, os.Error) {
-	var res vector.Vector
+func parseGroups(lines []string) ([]Group, error) {
+	var res []*Group
 	for _, line := range lines {
-		ss := strings.Split(strings.TrimSpace(line), " ", 4)
+		ss := strings.SplitN(strings.TrimSpace(line), " ", 4)
 		if len(ss) < 4 {
 			return nil, ProtocolError("short group info line: " + line)
 		}
@@ -358,18 +356,18 @@ func parseGroups(lines []string) ([]Group, os.Error) {
 		if err != nil {
 			return nil, ProtocolError("bad number in line: " + line)
 		}
-		res.Push(&Group{ss[0], high, low, ss[3]})
+		res = append(res, &Group{ss[0], high, low, ss[3]})
 	}
-	realres := make([]Group, res.Len())
+	realres := make([]Group, len(res))
 	for i, v := range res {
-		realres[i] = *v.(*Group)
+		realres[i] = *v
 	}
 	return realres, nil
 }
 
 // Capabilities returns a list of features this server performs.
 // Not all servers support capabilities.
-func (c *Conn) Capabilities() ([]string, os.Error) {
+func (c *Conn) Capabilities() ([]string, error) {
 	if _, _, err := c.cmd(101, "CAPABILITIES"); err != nil {
 		return nil, err
 	}
@@ -378,7 +376,7 @@ func (c *Conn) Capabilities() ([]string, os.Error) {
 
 // Date returns the current time on the server.
 // Typically the time is later passed to NewGroups or NewNews.
-func (c *Conn) Date() (*time.Time, os.Error) {
+func (c *Conn) Date() (*time.Time, error) {
 	_, line, err := c.cmd(111, "DATE")
 	if err != nil {
 		return nil, err
@@ -387,7 +385,7 @@ func (c *Conn) Date() (*time.Time, os.Error) {
 	if err != nil {
 		return nil, ProtocolError("invalid time: " + line)
 	}
-	return t, nil
+	return &t, nil
 }
 
 // List returns a list of groups present on the server.
@@ -397,7 +395,7 @@ func (c *Conn) Date() (*time.Time, os.Error) {
 //   List(keyword) - return different kinds of information about groups
 //   List(keyword, pattern) - filter groups against a glob-like pattern called a wildmat
 //
-func (c *Conn) List(a ...string) ([]string, os.Error) {
+func (c *Conn) List(a ...string) ([]string, error) {
 	if len(a) > 2 {
 		return nil, ProtocolError("List only takes up to 2 arguments")
 	}
@@ -415,13 +413,13 @@ func (c *Conn) List(a ...string) ([]string, os.Error) {
 }
 
 // Group changes the current group.
-func (c *Conn) Group(group string) (number, low, high int, err os.Error) {
+func (c *Conn) Group(group string) (number, low, high int, err error) {
 	_, line, err := c.cmd(211, "GROUP %s", group)
 	if err != nil {
 		return
 	}
 
-	ss := strings.Split(line, " ", 4) // intentional -- we ignore optional message
+	ss := strings.SplitN(line, " ", 4) // intentional -- we ignore optional message
 	if len(ss) < 3 {
 		err = ProtocolError("bad group response: " + line)
 		return
@@ -429,8 +427,8 @@ func (c *Conn) Group(group string) (number, low, high int, err os.Error) {
 
 	var n [3]int
 	for i, _ := range n {
-		c, err := strconv.Atoi(ss[i])
-		if err != nil {
+		c, errr := strconv.Atoi(ss[i])
+		if errr != nil {
 			err = ProtocolError("bad group response: " + line)
 			return
 		}
@@ -441,7 +439,7 @@ func (c *Conn) Group(group string) (number, low, high int, err os.Error) {
 }
 
 // Help returns the server's help text.
-func (c *Conn) Help() (io.Reader, os.Error) {
+func (c *Conn) Help() (io.Reader, error) {
 	if _, _, err := c.cmd(100, "HELP"); err != nil {
 		return nil, err
 	}
@@ -449,12 +447,12 @@ func (c *Conn) Help() (io.Reader, os.Error) {
 }
 
 // nextLastStat performs the work for NEXT, LAST, and STAT.
-func (c *Conn) nextLastStat(cmd, id string) (string, string, os.Error) {
+func (c *Conn) nextLastStat(cmd, id string) (string, string, error) {
 	_, line, err := c.cmd(223, maybeId(cmd, id))
 	if err != nil {
 		return "", "", err
 	}
-	ss := strings.Split(line, " ", 3) // optional comment ignored
+	ss := strings.SplitN(line, " ", 3) // optional comment ignored
 	if len(ss) < 2 {
 		return "", "", ProtocolError("Bad response to " + cmd + ": " + line)
 	}
@@ -465,23 +463,23 @@ func (c *Conn) nextLastStat(cmd, id string) (string, string, os.Error) {
 // message number in the current group, and vice versa.
 // The returned message number can be "0" if the current group
 // isn't one of the groups the message was posted to.
-func (c *Conn) Stat(id string) (number, msgid string, err os.Error) {
+func (c *Conn) Stat(id string) (number, msgid string, err error) {
 	return c.nextLastStat("STAT", id)
 }
 
 // Last selects the previous article, returning its message number and id.
-func (c *Conn) Last() (number, msgid string, err os.Error) {
+func (c *Conn) Last() (number, msgid string, err error) {
 	return c.nextLastStat("LAST", "")
 }
 
 // Next selects the next article, returning its message number and id.
-func (c *Conn) Next() (number, msgid string, err os.Error) {
+func (c *Conn) Next() (number, msgid string, err error) {
 	return c.nextLastStat("NEXT", "")
 }
 
 // ArticleText returns the article named by id as an io.Reader.
 // The article is in plain text format, not NNTP wire format.
-func (c *Conn) ArticleText(id string) (io.Reader, os.Error) {
+func (c *Conn) ArticleText(id string) (io.Reader, error) {
 	if _, _, err := c.cmd(220, maybeId("ARTICLE", id)); err != nil {
 		return nil, err
 	}
@@ -489,7 +487,7 @@ func (c *Conn) ArticleText(id string) (io.Reader, os.Error) {
 }
 
 // Article returns the article named by id as an *Article.
-func (c *Conn) Article(id string) (*Article, os.Error) {
+func (c *Conn) Article(id string) (*Article, error) {
 	if _, _, err := c.cmd(220, maybeId("ARTICLE", id)); err != nil {
 		return nil, err
 	}
@@ -504,7 +502,7 @@ func (c *Conn) Article(id string) (*Article, os.Error) {
 
 // HeadText returns the header for the article named by id as an io.Reader.
 // The article is in plain text format, not NNTP wire format.
-func (c *Conn) HeadText(id string) (io.Reader, os.Error) {
+func (c *Conn) HeadText(id string) (io.Reader, error) {
 	if _, _, err := c.cmd(221, maybeId("HEAD", id)); err != nil {
 		return nil, err
 	}
@@ -513,7 +511,7 @@ func (c *Conn) HeadText(id string) (io.Reader, os.Error) {
 
 // Head returns the header for the article named by id as an *Article.
 // The Body field in the Article is nil.
-func (c *Conn) Head(id string) (*Article, os.Error) {
+func (c *Conn) Head(id string) (*Article, error) {
 	if _, _, err := c.cmd(221, maybeId("HEAD", id)); err != nil {
 		return nil, err
 	}
@@ -521,7 +519,7 @@ func (c *Conn) Head(id string) (*Article, os.Error) {
 }
 
 // Body returns the body for the article named by id as an io.Reader.
-func (c *Conn) Body(id string) (io.Reader, os.Error) {
+func (c *Conn) Body(id string) (io.Reader, error) {
 	if _, _, err := c.cmd(222, maybeId("BODY", id)); err != nil {
 		return nil, err
 	}
@@ -529,7 +527,7 @@ func (c *Conn) Body(id string) (io.Reader, os.Error) {
 }
 
 // RawPost reads a text-formatted article from r and posts it to the server.
-func (c *Conn) RawPost(r io.Reader) os.Error {
+func (c *Conn) RawPost(r io.Reader) error {
 	if _, _, err := c.cmd(3, "POST"); err != nil {
 		return err
 	}
@@ -537,7 +535,7 @@ func (c *Conn) RawPost(r io.Reader) os.Error {
 	eof := false
 	for {
 		line, err := br.ReadString('\n')
-		if err == os.EOF {
+		if err == io.EOF {
 			eof = true
 		} else if err != nil {
 			return err
@@ -568,12 +566,12 @@ func (c *Conn) RawPost(r io.Reader) os.Error {
 }
 
 // Post posts an article to the server.
-func (c *Conn) Post(a *Article) os.Error {
+func (c *Conn) Post(a *Article) error {
 	return c.RawPost(&articleReader{a: a})
 }
 
 // Quit sends the QUIT command and closes the connection to the server.
-func (c *Conn) Quit() os.Error {
+func (c *Conn) Quit() error {
 	_, _, err := c.cmd(0, "QUIT")
 	c.conn.Close()
 	c.close = true
@@ -588,11 +586,11 @@ func (c *Conn) Quit() os.Error {
 // Give up if the line exceeds maxLineLength.
 // The returned bytes are a pointer into storage in
 // the bufio, so they are only valid until the next bufio read.
-func readLineBytes(b *bufio.Reader) (p []byte, err os.Error) {
+func readLineBytes(b *bufio.Reader) (p []byte, err error) {
 	if p, err = b.ReadSlice('\n'); err != nil {
 		// We always know when EOF is coming.
 		// If the caller asked for a line, there should be a line.
-		if err == os.EOF {
+		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
 		}
 		return nil, err
@@ -614,7 +612,7 @@ var colon = []byte{':'}
 // A key/value has the form Key: Value\r\n
 // and the Value can continue on multiple lines if each continuation line
 // starts with a space/tab.
-func readKeyValue(b *bufio.Reader) (key, value string, err os.Error) {
+func readKeyValue(b *bufio.Reader) (key, value string, err error) {
 	line, e := readLineBytes(b)
 	if e == io.ErrUnexpectedEOF {
 		return "", "", nil
@@ -649,7 +647,7 @@ func readKeyValue(b *bufio.Reader) (key, value string, err os.Error) {
 	for {
 		c, e := b.ReadByte()
 		if c != ' ' && c != '\t' {
-			if e != os.EOF {
+			if e != io.EOF {
 				b.UnreadByte()
 			}
 			break
@@ -658,7 +656,7 @@ func readKeyValue(b *bufio.Reader) (key, value string, err os.Error) {
 		// Eat leading space.
 		for c == ' ' || c == '\t' {
 			if c, e = b.ReadByte(); e != nil {
-				if e == os.EOF {
+				if e == io.EOF {
 					e = io.ErrUnexpectedEOF
 				}
 				return "", "", e
@@ -680,7 +678,7 @@ Malformed:
 
 // Internal. Parses headers in NNTP articles. Most of this is stolen from the http package,
 // and it should probably be split out into a generic RFC822 header-parsing package.
-func (c *Conn) readHeader(r *bufio.Reader) (res *Article, err os.Error) {
+func (c *Conn) readHeader(r *bufio.Reader) (res *Article, err error) {
 	res = new(Article)
 	res.Header = make(map[string][]string)
 	for {
@@ -696,9 +694,9 @@ func (c *Conn) readHeader(r *bufio.Reader) (res *Article, err os.Error) {
 		// a single key joined with commas, so we keep all values seperate.
 		oldvalue, present := res.Header[key]
 		if present {
-			sv := vector.StringVector(oldvalue)
-			sv.Push(value)
-			res.Header[key] = []string(sv)
+			sv := oldvalue
+			sv = append(sv, value)
+			res.Header[key] = sv
 		} else {
 			res.Header[key] = []string{value}
 		}
