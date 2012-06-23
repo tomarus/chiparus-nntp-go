@@ -448,7 +448,7 @@ func (c *Conn) Help() (io.Reader, error) {
 
 // nextLastStat performs the work for NEXT, LAST, and STAT.
 func (c *Conn) nextLastStat(cmd, id string) (string, string, error) {
-	_, line, err := c.cmd(223, maybeId(cmd, id))
+	_, line, err := c.cmd(223, "%s", maybeId(cmd, id))
 	if err != nil {
 		return "", "", err
 	}
@@ -480,7 +480,7 @@ func (c *Conn) Next() (number, msgid string, err error) {
 // ArticleText returns the article named by id as an io.Reader.
 // The article is in plain text format, not NNTP wire format.
 func (c *Conn) ArticleText(id string) (io.Reader, error) {
-	if _, _, err := c.cmd(220, maybeId("ARTICLE", id)); err != nil {
+	if _, _, err := c.cmd(220, "%s", maybeId("ARTICLE", id)); err != nil {
 		return nil, err
 	}
 	return c.body(), nil
@@ -488,7 +488,7 @@ func (c *Conn) ArticleText(id string) (io.Reader, error) {
 
 // Article returns the article named by id as an *Article.
 func (c *Conn) Article(id string) (*Article, error) {
-	if _, _, err := c.cmd(220, maybeId("ARTICLE", id)); err != nil {
+	if _, _, err := c.cmd(220, "%s", maybeId("ARTICLE", id)); err != nil {
 		return nil, err
 	}
 	r := bufio.NewReader(c.body())
@@ -503,7 +503,7 @@ func (c *Conn) Article(id string) (*Article, error) {
 // HeadText returns the header for the article named by id as an io.Reader.
 // The article is in plain text format, not NNTP wire format.
 func (c *Conn) HeadText(id string) (io.Reader, error) {
-	if _, _, err := c.cmd(221, maybeId("HEAD", id)); err != nil {
+	if _, _, err := c.cmd(221, "%s", maybeId("HEAD", id)); err != nil {
 		return nil, err
 	}
 	return c.body(), nil
@@ -512,7 +512,7 @@ func (c *Conn) HeadText(id string) (io.Reader, error) {
 // Head returns the header for the article named by id as an *Article.
 // The Body field in the Article is nil.
 func (c *Conn) Head(id string) (*Article, error) {
-	if _, _, err := c.cmd(221, maybeId("HEAD", id)); err != nil {
+	if _, _, err := c.cmd(221, "%s", maybeId("HEAD", id)); err != nil {
 		return nil, err
 	}
 	return c.readHeader(bufio.NewReader(c.body()))
@@ -520,7 +520,7 @@ func (c *Conn) Head(id string) (*Article, error) {
 
 // Body returns the body for the article named by id as an io.Reader.
 func (c *Conn) Body(id string) (io.Reader, error) {
-	if _, _, err := c.cmd(222, maybeId("BODY", id)); err != nil {
+	if _, _, err := c.cmd(222, "%s", maybeId("BODY", id)); err != nil {
 		return nil, err
 	}
 	return c.body(), nil
