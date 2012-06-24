@@ -71,6 +71,22 @@ func TestBasic(t *testing.T) {
 		t.Fatal("Group shouldn't error: " + err.Error())
 	}
 
+	ov, err := conn.Over("1-")
+	if err != nil {
+		t.Fatal("Over shouldn't error: " + err.Error())
+	}
+	if ov[0].Subject != "Subject Data" {
+		t.Fatal("Over returned mismatched subject")
+	}
+
+	hdr, err := conn.Hdr("Subject", "1-")
+	if err != nil {
+		t.Fatal("Hdr shouldn't error: " + err.Error())
+	}
+	if hdr[0].Header != "Subject Data" {
+		t.Fatal("Hdr returned mismatched subject")
+	}
+
 	// test STAT, NEXT, and LAST
 	if _, _, err = conn.Stat(""); err != nil {
 		t.Fatal("should be able to STAT after selecting a group: " + err.Error())
@@ -175,6 +191,12 @@ foo 7 3 y
 bar 000008 02 m
 .
 211 100 1 100 gmane.comp.lang.go.general
+224 Overview data
+1	Subject Data	From <addr@fake>	Sun, 24 Jun 2012 00:00:00 +0200	<msg@id>	<ref@1> <ref@2>	1234	25	Xref: artnm gmane.comp.lang.go.general:1
+.
+221 Subject header data
+1 Subject Data
+.
 223 1 <a@b.c> status
 223 2 <b@c.d> Article retrieved
 223 1 <a@b.c> Article retrieved
@@ -221,6 +243,8 @@ var basicClient = `CAPABILITIES
 DATE
 LIST
 GROUP gmane.comp.lang.go.general
+OVER 1-
+HDR Subject 1-
 STAT
 NEXT
 LAST
