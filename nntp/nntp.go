@@ -61,7 +61,7 @@ type Conn struct {
 type Group struct {
 	Name string
 	// High and low message-numbers
-	High, Low int
+	High, Low int64
 	// Status indicates if general posting is allowed --
 	// typical values are "y", "n", or "m".
 	Status string
@@ -327,7 +327,7 @@ func (c *Conn) readGroups() ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseGroups(lines)
+	return c.ParseGroups(lines)
 }
 
 // NewNews returns a list of the IDs of articles posted
@@ -355,19 +355,19 @@ func (c *Conn) NewNews(group string, since time.Time) ([]string, error) {
 	return id, nil
 }
 
-// parseGroups is used to parse a list of group states.
-func parseGroups(lines []string) ([]Group, error) {
+// ParseGroups is used to parse a list of group states.
+func (c *Conn) ParseGroups(lines []string) ([]Group, error) {
 	var res []*Group
 	for _, line := range lines {
 		ss := strings.SplitN(strings.TrimSpace(line), " ", 4)
 		if len(ss) < 4 {
 			return nil, ProtocolError("short group info line: " + line)
 		}
-		high, err := strconv.Atoi(ss[1])
+		high, err := strconv.ParseInt(ss[1], 10, 64)
 		if err != nil {
 			return nil, ProtocolError("bad number in line: " + line)
 		}
-		low, err := strconv.Atoi(ss[2])
+		low, err := strconv.ParseInt(ss[2], 10, 64)
 		if err != nil {
 			return nil, ProtocolError("bad number in line: " + line)
 		}
@@ -474,7 +474,7 @@ func (c *Conn) Hdr(header, args string) ([]Hdr, error) {
 }
 
 // Group changes the current group.
-func (c *Conn) Group(group string) (number, low, high int, err error) {
+func (c *Conn) Group(group string) (number, low, high int64, err error) {
 	_, line, err := c.cmd(211, "GROUP %s", group)
 	if err != nil {
 		return
@@ -486,9 +486,9 @@ func (c *Conn) Group(group string) (number, low, high int, err error) {
 		return
 	}
 
-	var n [3]int
+	var n [3]int64
 	for i, _ := range n {
-		c, errr := strconv.Atoi(ss[i])
+		c, errr := strconv.ParseInt(ss[i], 10, 64)
 		if errr != nil {
 			err = ProtocolError("bad group response: " + line)
 			return
