@@ -88,12 +88,12 @@ type bodyReader struct {
 // command. We don't do that for now because there are no known servers 
 // which have configured this anyway.
 type Overview struct {
-        Id, Subject, From, Date, MessageId, References, Bytes, Lines, Xref string
+	Id, Subject, From, Date, MessageId, References, Bytes, Lines, Xref string
 }
 
 // A Hdr type is returned from the Hdr command.
 type Hdr struct {
-        Id, Header string
+	Id, Header string
 }
 
 var dotnl = []byte(".\n")
@@ -429,48 +429,48 @@ func (c *Conn) List(a ...string) ([]string, error) {
 
 // Over command returns a list of articles available in the current group.
 func (c *Conn) Over(args string) ([]Overview, error) {
-        _, _, err := c.cmd(224, "OVER %s", args);
-        if err != nil {
-                return nil, err
-        }
+	_, _, err := c.cmd(224, "OVER %s", args)
+	if err != nil {
+		return nil, err
+	}
 
 	over, err := c.readStrings()
 	if err != nil {
 		return nil, err
 	}
 
-        var res []Overview
+	var res []Overview
 	for _, line := range over {
 		ss := strings.SplitN(strings.TrimSpace(line), "\t", 9)
 		if len(ss) < 9 {
 			return nil, ProtocolError("short xover line: " + line)
 		}
 		res = append(res, Overview{ss[0], ss[1], ss[2], ss[3], ss[4], ss[5], ss[6], ss[7], ss[8]})
-        }
-        return res, nil
+	}
+	return res, nil
 }
 
 // Hdr command returns a list of article numbers and the content of the specified header.
 func (c *Conn) Hdr(header, args string) ([]Hdr, error) {
-        _, _, err := c.cmd(221, "HDR %s %s", header, args);
-        if err != nil {
-                return nil, err
-        }
+	_, _, err := c.cmd(221, "HDR %s %s", header, args)
+	if err != nil {
+		return nil, err
+	}
 
 	over, err := c.readStrings()
 	if err != nil {
 		return nil, err
 	}
 
-        var res []Hdr
+	var res []Hdr
 	for _, line := range over {
 		ss := strings.SplitN(strings.TrimSpace(line), " ", 2)
 		if len(ss) < 2 {
 			return nil, ProtocolError("short hdr line: " + line)
 		}
 		res = append(res, Hdr{ss[0], ss[1]})
-        }
-        return res, nil
+	}
+	return res, nil
 }
 
 // Group changes the current group.
