@@ -327,7 +327,7 @@ func (c *Conn) readGroups() ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	return c.ParseGroups(lines)
+	return c.parseGroups(lines)
 }
 
 // NewNews returns a list of the IDs of articles posted
@@ -355,8 +355,8 @@ func (c *Conn) NewNews(group string, since time.Time) ([]string, error) {
 	return id, nil
 }
 
-// ParseGroups is used to parse a list of group states.
-func (c *Conn) ParseGroups(lines []string) ([]Group, error) {
+// parseGroups is used to parse a list of group states.
+func (c *Conn) parseGroups(lines []string) ([]Group, error) {
 	var res []*Group
 	for _, line := range lines {
 		ss := strings.SplitN(strings.TrimSpace(line), " ", 4)
@@ -425,6 +425,20 @@ func (c *Conn) List(a ...string) ([]string, error) {
 		return nil, err
 	}
 	return c.readStrings()
+}
+
+// List Active, a wrapper for List("ACTIVE") which returns
+// a []Group slice instead of a []string slice.
+func (c *Conn) ListActive(args ...string) ([]Group, error) {
+	cmd := "ACTIVE"
+	if len(args) > 0 {
+		cmd += " " + args[0]
+	}
+	lines, err := c.List(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return c.parseGroups(lines)
 }
 
 // Over command returns a list of articles available in the current group.
