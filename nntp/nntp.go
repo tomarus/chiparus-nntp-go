@@ -443,7 +443,7 @@ func (c *Conn) ListActive(args ...string) ([]Group, error) {
 
 // Over command returns a list of articles available in the current group.
 func (c *Conn) Over(args string) ([]Overview, error) {
-	_, _, err := c.cmd(224, "OVER %s", args)
+	_, _, err := c.cmd(224, "XOVER %s", args)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ func (c *Conn) Over(args string) ([]Overview, error) {
 
 // Hdr command returns a list of article numbers and the content of the specified header.
 func (c *Conn) Hdr(header, args string) ([]Hdr, error) {
-	_, _, err := c.cmd(221, "HDR %s %s", header, args)
+	_, _, err := c.cmd(221, "XHDR %s %s", header, args)
 	if err != nil {
 		return nil, err
 	}
