@@ -455,7 +455,7 @@ func (c *Conn) Over(args string) ([]Overview, error) {
 
 	var res []Overview
 	for _, line := range over {
-		ss := strings.SplitN(strings.TrimSpace(line), "\t", 9)
+		ss := strings.SplitN(line, "\t", 9)
 		if len(ss) < 9 {
 			return nil, ProtocolError("short xover line: " + line)
 		}
