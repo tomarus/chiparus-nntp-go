@@ -55,6 +55,7 @@ type Conn struct {
 	r     *bufio.Reader
 	br    *bodyReader
 	close bool
+	msg   string
 }
 
 // A Group gives information about a single news group on the server.
@@ -81,11 +82,11 @@ type bodyReader struct {
 	buf *bytes.Buffer
 }
 
-// An Overview record gives information about 
+// An Overview record gives information about
 // the list of articles available in a single group.
-// XXX We currently assume a fixed overview structure returned from the 
-// server. The configuration is normally retrieved in a LIST OVERVIEW.FMT 
-// command. We don't do that for now because there are no known servers 
+// XXX We currently assume a fixed overview structure returned from the
+// server. The configuration is normally retrieved in a LIST OVERVIEW.FMT
+// command. We don't do that for now because there are no known servers
 // which have configured this anyway.
 type Overview struct {
 	Id, Subject, From, Date, MessageId, References, Bytes, Lines, Xref string
@@ -221,7 +222,7 @@ func Dial(network, addr string) (*Conn, error) {
 	res.conn = c
 	res.r = bufio.NewReaderSize(c, 4096)
 
-	_, err = res.r.ReadString('\n')
+	res.msg, err = res.r.ReadString('\n')
 	if err != nil {
 		return nil, err
 	}
@@ -776,4 +777,8 @@ func (c *Conn) readHeader(r *bufio.Reader) (res *Article, err error) {
 		}
 	}
 	return res, nil
+}
+
+func (c *Conn) Msg() string {
+	return c.msg
 }
