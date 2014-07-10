@@ -9,6 +9,7 @@ package nntp
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -219,15 +220,38 @@ func Dial(network, addr string) (*Conn, error) {
 		return nil, err
 	}
 
+	err =  setupReader(c, res)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func DialTLS(network, addr string) (*Conn, error) {
+	res := new(Conn)
+	c, err := tls.Dial(network, addr, &tls.Config{InsecureSkipVerify:true})
+	if err != nil {
+		return nil, err
+	}
+
+	err =  setupReader(c, res)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+
+func setupReader(c net.Conn, res *Conn) (err error) {
 	res.conn = c
 	res.r = bufio.NewReaderSize(c, 4096)
 
 	res.msg, err = res.r.ReadString('\n')
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return res, nil
+	return nil
 }
 
 func (c *Conn) body() io.Reader {
