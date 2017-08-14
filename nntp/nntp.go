@@ -220,7 +220,7 @@ func Dial(network, addr string) (*Conn, error) {
 		return nil, err
 	}
 
-	err =  setupReader(c, res)
+	err = setupReader(c, res)
 	if err != nil {
 		return nil, err
 	}
@@ -229,18 +229,17 @@ func Dial(network, addr string) (*Conn, error) {
 
 func DialTLS(network, addr string) (*Conn, error) {
 	res := new(Conn)
-	c, err := tls.Dial(network, addr, &tls.Config{InsecureSkipVerify:true})
+	c, err := tls.Dial(network, addr, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
 	}
 
-	err =  setupReader(c, res)
+	err = setupReader(c, res)
 	if err != nil {
 		return nil, err
 	}
 	return res, nil
 }
-
 
 func setupReader(c net.Conn, res *Conn) (err error) {
 	res.conn = c
@@ -625,9 +624,9 @@ func (c *Conn) Body(id string) (io.Reader, error) {
 	return c.body(), nil
 }
 
-// RawPost reads a text-formatted article from r and posts it to the server.
-func (c *Conn) RawPost(r io.Reader) error {
-	if _, _, err := c.cmd(3, "POST"); err != nil {
+// rawPost reads a text-formatted article from r and posts it to the server.
+func (c *Conn) rawPost(r io.Reader, cmd string, result uint) error {
+	if _, _, err := c.cmd(3, cmd); err != nil {
 		return err
 	}
 	br := bufio.NewReader(r)
@@ -658,7 +657,7 @@ func (c *Conn) RawPost(r io.Reader) error {
 		}
 	}
 
-	if _, _, err := c.cmd(240, "."); err != nil {
+	if _, _, err := c.cmd(result, "."); err != nil {
 		return err
 	}
 	return nil
@@ -666,7 +665,12 @@ func (c *Conn) RawPost(r io.Reader) error {
 
 // Post posts an article to the server.
 func (c *Conn) Post(a *Article) error {
-	return c.RawPost(&articleReader{a: a})
+	return c.rawPost(&articleReader{a: a}, "POST", 240)
+}
+
+// IHave feeds an article to the server.
+func (c *Conn) IHave(a *Article) error {
+	return c.rawPost(&articleReader{a: a}, "IHAVE", 235)
 }
 
 // Quit sends the QUIT command and closes the connection to the server.
